@@ -3,6 +3,7 @@ import pino from 'pino';
 import { fileURLToPath } from 'url';
 import { healthRouter } from './api/health.js';
 import { authRouter } from './api/auth.js';
+import { workflowRouter } from './api/workflows.js';
 import { env } from './config/env.js';
 import { errorHandler } from './middleware/error-handler.js';
 
@@ -12,6 +13,7 @@ const logger = pino({ level: env.LOG_LEVEL });
 app.use(express.json());
 app.use('/api', healthRouter);
 app.use('/api', authRouter);
+app.use('/api', workflowRouter);
 app.use(errorHandler);
 
 export function startServer(): void {
