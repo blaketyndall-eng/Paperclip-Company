@@ -4,6 +4,12 @@
 
 - Development: http://localhost:4000/api
 
+## Contract Endpoint
+
+- `GET /docs/openapi.json`
+  - Returns machine-readable OpenAPI contract used by clients and tests.
+  - Source file in repo: `docs/openapi.json`
+
 ## Authentication
 
 - Auth scheme: `Authorization: Bearer <jwt>`
@@ -99,3 +105,7 @@ Known workflow service errors:
 - `FORBIDDEN` (403)
 - `INVALID_RUN_STATE` (409)
 - `INTERNAL_SERVER_ERROR` (500)
+
+## OpenAPI Coverage Note
+
+The current contract in `docs/openapi.json` includes all implemented auth and workflow endpoints in the codebase. Keep this file updated whenever route signatures, request bodies, or response statuses change.

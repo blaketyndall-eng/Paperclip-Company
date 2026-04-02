@@ -1,0 +1,272 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Paperclip Company API",
+    "version": "0.1.0",
+    "description": "MVP API for authentication and workflow execution"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4000/api",
+      "description": "Local development"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Workflow": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "ownerId": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "template": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "inactive"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "ownerId", "name", "template", "status", "createdAt", "updatedAt"]
+      },
+      "WorkflowRun": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "workflowId": { "type": "string", "format": "uuid" },
+          "status": {
+            "type": "string",
+            "enum": ["created", "pending_approval", "completed", "rejected", "failed"]
+          },
+          "triggerData": { "type": "object", "additionalProperties": true },
+          "context": { "type": "object", "additionalProperties": true },
+          "createdBy": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "workflowId", "status", "triggerData", "context", "createdBy", "createdAt", "updatedAt"]
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "Service healthy"
+          }
+        }
+      }
+    },
+    "/docs/openapi.json": {
+      "get": {
+        "summary": "OpenAPI contract",
+        "responses": {
+          "200": {
+            "description": "OpenAPI document"
+          }
+        }
+      }
+    },
+    "/auth/google": {
+      "get": {
+        "summary": "Get Google OAuth authorization URL",
+        "responses": {
+          "200": { "description": "Authorization URL generated" },
+          "500": { "description": "OAuth not configured" }
+        }
+      }
+    },
+    "/auth/google/callback": {
+      "get": {
+        "summary": "Exchange Google OAuth code and create session",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Authenticated successfully" },
+          "400": { "description": "Missing authorization code" },
+          "502": { "description": "OAuth exchange failure" }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "summary": "Get JWT claims",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Current auth context" },
+          "401": { "description": "Missing or invalid token" }
+        }
+      }
+    },
+    "/workflows": {
+      "post": {
+        "summary": "Create workflow",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "template": { "type": "string" }
+                },
+                "required": ["name", "template"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Workflow created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workflow": { "$ref": "#/components/schemas/Workflow" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation error" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden" }
+        }
+      },
+      "get": {
+        "summary": "List owner workflows",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Workflows list" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/workflows/{workflowId}/execute": {
+      "post": {
+        "summary": "Execute workflow and create run",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "workflowId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "201": { "description": "Run created" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Workflow not found" }
+        }
+      }
+    },
+    "/workflows/{workflowId}/runs": {
+      "get": {
+        "summary": "List workflow runs",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "workflowId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Runs list" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Workflow not found" }
+        }
+      }
+    },
+    "/runs/{runId}/approve": {
+      "put": {
+        "summary": "Approve pending run",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Run approved" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Run not found" },
+          "409": { "description": "Invalid run state" }
+        }
+      }
+    },
+    "/runs/{runId}/reject": {
+      "put": {
+        "summary": "Reject pending run",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Run rejected" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Run not found" },
+          "409": { "description": "Invalid run state" }
+        }
+      }
+    },
+    "/runs/{runId}/audit": {
+      "get": {
+        "summary": "List run audit events",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Audit events list" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Run not found" }
+        }
+      }
+    }
+  }
+}
