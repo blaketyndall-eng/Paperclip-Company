@@ -15,6 +15,7 @@ interface GoogleProfile {
 
 interface ExchangeResult {
   profile: GoogleProfile;
+  accessToken: string;
   refreshToken?: string;
   expiresIn?: number;
 }
@@ -74,6 +75,7 @@ class GoogleOAuthClient implements OAuthClient {
 
     return {
       profile,
+      accessToken: tokenPayload.access_token,
       refreshToken: tokenPayload.refresh_token,
       expiresIn: tokenPayload.expires_in
     };
@@ -136,6 +138,13 @@ export function buildAuthRouter(
       };
 
       await repository.createSession(session);
+      await repository.upsertGoogleWorkspaceToken({
+        userId: user.id,
+        accessToken: exchange.accessToken,
+        refreshToken: exchange.refreshToken,
+        expiresAt: new Date(now.getTime() + (exchange.expiresIn ?? 3600) * 1000).toISOString(),
+        scope: 'openid email profile gmail drive'
+      });
       await repository.addAuditEvent({
         userId: user.id,
         action: 'login',

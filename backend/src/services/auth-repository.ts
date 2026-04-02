@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { Pool } from 'pg';
-import { Role, Session, User, roles } from '../models/auth.js';
+import { GoogleWorkspaceToken, Role, Session, User, roles } from '../models/auth.js';
 import { getPool } from '../db/pool.js';
 
 export interface CreateGoogleUserInput {
@@ -22,6 +22,14 @@ export interface AuthRepository {
     expiresAt: string;
   }): Promise<Session | undefined>;
   deleteSessionByRefreshToken(refreshToken: string): Promise<boolean>;
+  upsertGoogleWorkspaceToken(input: {
+    userId: string;
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt: string;
+    scope?: string;
+  }): Promise<GoogleWorkspaceToken>;
+  getGoogleWorkspaceTokenByUserId(userId: string): Promise<GoogleWorkspaceToken | undefined>;
   addAuditEvent(event: {
     userId: string;
     action: 'login' | 'logout' | 'refresh' | 'role_change';
@@ -217,6 +225,80 @@ export class PostgresAuthRepository implements AuthRepository {
     );
 
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async upsertGoogleWorkspaceToken(input: {
+    userId: string;
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt: string;
+    scope?: string;
+  }): Promise<GoogleWorkspaceToken> {
+    const existing = await this.getGoogleWorkspaceTokenByUserId(input.userId);
+    const refreshToken = input.refreshToken ?? existing?.refreshToken;
+
+    if (!refreshToken) {
+      throw new Error('refreshToken is required when creating initial Google workspace token');
+    }
+
+    const now = new Date();
+    const result = await this.pool.query(
+      `INSERT INTO google_workspace_tokens (id, user_id, access_token, refresh_token, expires_at, scope, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+       ON CONFLICT (user_id)
+       DO UPDATE SET access_token = EXCLUDED.access_token,
+                     refresh_token = EXCLUDED.refresh_token,
+                     expires_at = EXCLUDED.expires_at,
+                     scope = EXCLUDED.scope,
+                     updated_at = EXCLUDED.updated_at
+       RETURNING id, user_id, access_token, refresh_token, expires_at, scope, created_at, updated_at`,
+      [
+        existing?.id ?? randomUUID(),
+        input.userId,
+        input.accessToken,
+        refreshToken,
+        input.expiresAt,
+        input.scope ?? null,
+        now
+      ]
+    );
+
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      userId: row.user_id,
+      accessToken: row.access_token,
+      refreshToken: row.refresh_token,
+      expiresAt: row.expires_at.toISOString(),
+      scope: row.scope ?? undefined,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString()
+    };
+  }
+
+  async getGoogleWorkspaceTokenByUserId(userId: string): Promise<GoogleWorkspaceToken | undefined> {
+    const result = await this.pool.query(
+      `SELECT id, user_id, access_token, refresh_token, expires_at, scope, created_at, updated_at
+       FROM google_workspace_tokens
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    if (result.rowCount === 0) {
+      return undefined;
+    }
+
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      userId: row.user_id,
+      accessToken: row.access_token,
+      refreshToken: row.refresh_token,
+      expiresAt: row.expires_at.toISOString(),
+      scope: row.scope ?? undefined,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString()
+    };
   }
 
   async addAuditEvent(event: {

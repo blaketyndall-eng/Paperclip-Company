@@ -26,6 +26,12 @@ export function buildConnectorsRouter(service: GoogleWorkspaceService) {
   }
 
   connectorsRouter.get('/connectors/gmail/messages', jwtAuth, async (req, res) => {
+    const auth = req.auth;
+    if (!auth) {
+      res.status(401).json({ error: 'Missing auth context' });
+      return;
+    }
+
     const labelIds =
       typeof req.query.labelIds === 'string'
         ? req.query.labelIds
@@ -38,6 +44,7 @@ export function buildConnectorsRouter(service: GoogleWorkspaceService) {
 
     try {
       const messages = await service.listGmailMessages({
+        requesterUserId: auth.sub,
         labelIds,
         maxResults: Number.isFinite(maxResults) ? maxResults : undefined
       });
@@ -60,6 +67,7 @@ export function buildConnectorsRouter(service: GoogleWorkspaceService) {
 
       try {
         const result = await service.modifyGmailLabels({
+          requesterUserId: auth.sub,
           messageId: req.params.messageId,
           addLabelIds: Array.isArray(req.body?.addLabelIds)
             ? req.body.addLabelIds.filter((value: unknown): value is string => typeof value === 'string')
@@ -77,11 +85,18 @@ export function buildConnectorsRouter(service: GoogleWorkspaceService) {
   );
 
   connectorsRouter.get('/connectors/drive/files', jwtAuth, async (req, res) => {
+    const auth = req.auth;
+    if (!auth) {
+      res.status(401).json({ error: 'Missing auth context' });
+      return;
+    }
+
     const folderId = typeof req.query.folderId === 'string' ? req.query.folderId : undefined;
     const pageSize = typeof req.query.pageSize === 'string' ? Number(req.query.pageSize) : undefined;
 
     try {
       const files = await service.listDriveFiles({
+        requesterUserId: auth.sub,
         folderId,
         pageSize: Number.isFinite(pageSize) ? pageSize : undefined
       });
@@ -100,6 +115,7 @@ export function buildConnectorsRouter(service: GoogleWorkspaceService) {
 
     try {
       const folder = await service.createDriveFolder({
+        requesterUserId: auth.sub,
         name: typeof req.body?.name === 'string' ? req.body.name : '',
         parentFolderId: typeof req.body?.parentFolderId === 'string' ? req.body.parentFolderId : undefined,
         actorRoles: auth.roles

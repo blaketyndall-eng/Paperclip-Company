@@ -5,11 +5,16 @@ import { buildConnectorsRouter } from '../../src/api/connectors';
 import { GoogleWorkspaceError, GoogleWorkspaceService } from '../../src/services/google-workspace-service';
 
 class MockGoogleWorkspaceService implements GoogleWorkspaceService {
-  async listGmailMessages() {
+  async listGmailMessages(_input: {
+    requesterUserId: string;
+    labelIds?: string[];
+    maxResults?: number;
+  }) {
     return [{ id: 'm1', threadId: 't1' }];
   }
 
   async modifyGmailLabels(input: {
+    requesterUserId: string;
     messageId: string;
     addLabelIds?: string[];
     removeLabelIds?: string[];
@@ -21,11 +26,16 @@ class MockGoogleWorkspaceService implements GoogleWorkspaceService {
     return { messageId: input.messageId, updated: true };
   }
 
-  async listDriveFiles() {
+  async listDriveFiles(_input: {
+    requesterUserId: string;
+    folderId?: string;
+    pageSize?: number;
+  }) {
     return [{ id: 'f1', name: 'Doc', mimeType: 'application/vnd.google-apps.document' }];
   }
 
   async createDriveFolder(input: {
+    requesterUserId: string;
     name: string;
     parentFolderId?: string;
     actorRoles: string[];

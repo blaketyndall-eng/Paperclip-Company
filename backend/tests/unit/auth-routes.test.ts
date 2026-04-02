@@ -12,6 +12,7 @@ class MockOAuthClient {
         email: 'oauth-user@example.com',
         name: 'OAuth User'
       },
+      accessToken: 'google-access-token',
       refreshToken: 'refresh-token',
       expiresIn: 3600
     };

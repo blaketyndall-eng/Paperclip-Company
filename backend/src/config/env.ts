@@ -14,7 +14,6 @@ const envSchema = z.object({
   GOOGLE_REDIRECT_URI: z.string().optional(),
   GOOGLE_TOKEN_URL: z.string().default('https://oauth2.googleapis.com/token'),
   GOOGLE_USERINFO_URL: z.string().default('https://openidconnect.googleapis.com/v1/userinfo'),
-  GOOGLE_WORKSPACE_ACCESS_TOKEN: z.string().optional(),
   GOOGLE_API_MAX_RETRIES: z.coerce.number().default(3),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   WORKFLOW_EXECUTION_MODE: z.enum(['inline', 'bull']).default('inline'),

@@ -4,6 +4,7 @@ Current migrations:
 
 - `001_init_auth.sql`
 - `002_init_workflows.sql`
+- `003_google_workspace_tokens.sql`
 
 ## Auth Tables
 
@@ -27,6 +28,16 @@ Current migrations:
 	- `action`
 	- `metadata JSONB`
 	- `created_at`
+
+- `google_workspace_tokens`
+	- `id UUID PK`
+	- `user_id UNIQUE FK -> users.id`
+	- `access_token`
+	- `refresh_token`
+	- `expires_at`
+	- `scope`
+	- `created_at`
+	- `updated_at`
 
 ## Workflow Tables
 
@@ -84,6 +95,20 @@ Current migrations:
 	- `TEST_DATABASE_URL` (preferred)
 	- fallback: `DATABASE_URL`
 - If no reachable Postgres is available, integration tests skip gracefully and do not fail CI/local runs.
+
+## Connector Integration Test Target (Staging)
+
+- Run integration tests (includes connector sandbox tests):
+	- `npm run test:integration --workspace backend`
+	- or from root: `npm run test:integration`
+- Enable staging connector tests by setting:
+	- `STAGING_GOOGLE_CONNECTORS_ENABLED=true`
+	- `STAGING_GOOGLE_CONNECTORS_USER_EMAIL`
+	- `STAGING_GOOGLE_CONNECTORS_ACCESS_TOKEN`
+	- `STAGING_GOOGLE_CONNECTORS_REFRESH_TOKEN`
+- Refresh path verification additionally requires:
+	- `GOOGLE_CLIENT_ID`
+	- `GOOGLE_CLIENT_SECRET`
 
 ## Execution Lifecycle Notes
 

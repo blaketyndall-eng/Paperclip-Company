@@ -19,6 +19,17 @@ export interface Session {
   createdAt: string;
 }
 
+export interface GoogleWorkspaceToken {
+  id: string;
+  userId: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string;
+  scope?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AuthAuditEvent {
   id: string;
   userId: string;

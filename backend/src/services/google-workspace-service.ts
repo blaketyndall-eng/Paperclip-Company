@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { AuthRepository, createAuthRepository } from './auth-repository.js';
 
 export class GoogleWorkspaceError extends Error {
   constructor(
@@ -20,20 +21,24 @@ interface DriveListResponse {
 
 export interface GoogleWorkspaceService {
   listGmailMessages(input: {
+    requesterUserId: string;
     labelIds?: string[];
     maxResults?: number;
   }): Promise<Array<{ id: string; threadId: string }>>;
   modifyGmailLabels(input: {
+    requesterUserId: string;
     messageId: string;
     addLabelIds?: string[];
     removeLabelIds?: string[];
     actorRoles: string[];
   }): Promise<{ messageId: string; updated: boolean }>;
   listDriveFiles(input: {
+    requesterUserId: string;
     folderId?: string;
     pageSize?: number;
   }): Promise<Array<{ id: string; name: string; mimeType: string }>>;
   createDriveFolder(input: {
+    requesterUserId: string;
     name: string;
     parentFolderId?: string;
     actorRoles: string[];
@@ -45,16 +50,14 @@ function canWriteWorkspace(roles: string[]): boolean {
 }
 
 export class GoogleWorkspaceApiService implements GoogleWorkspaceService {
+  constructor(private readonly authRepository: AuthRepository) {}
+
   async listGmailMessages(input: {
+    requesterUserId: string;
     labelIds?: string[];
     maxResults?: number;
   }): Promise<Array<{ id: string; threadId: string }>> {
-    if (!env.GOOGLE_WORKSPACE_ACCESS_TOKEN) {
-      return [
-        { id: 'mock-msg-1', threadId: 'mock-thread-1' },
-        { id: 'mock-msg-2', threadId: 'mock-thread-2' }
-      ];
-    }
+    const accessToken = await this.getValidAccessToken(input.requesterUserId);
 
     const query = new URLSearchParams();
     query.set('maxResults', String(Math.min(input.maxResults ?? 20, 100)));
@@ -65,7 +68,7 @@ export class GoogleWorkspaceApiService implements GoogleWorkspaceService {
     const response = await this.callWithRetries(() =>
       fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${query.toString()}`, {
         headers: {
-          Authorization: `Bearer ${env.GOOGLE_WORKSPACE_ACCESS_TOKEN}`
+          Authorization: `Bearer ${accessToken}`
         }
       })
     );
@@ -75,6 +78,7 @@ export class GoogleWorkspaceApiService implements GoogleWorkspaceService {
   }
 
   async modifyGmailLabels(input: {
+    requesterUserId: string;
     messageId: string;
     addLabelIds?: string[];
     removeLabelIds?: string[];
@@ -84,16 +88,14 @@ export class GoogleWorkspaceApiService implements GoogleWorkspaceService {
       throw new GoogleWorkspaceError(403, 'FORBIDDEN', 'Insufficient role for Gmail label updates');
     }
 
-    if (!env.GOOGLE_WORKSPACE_ACCESS_TOKEN) {
-      return { messageId: input.messageId, updated: true };
-    }
+    const accessToken = await this.getValidAccessToken(input.requesterUserId);
 
     await this.callWithRetries(() =>
       fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${input.messageId}/modify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${env.GOOGLE_WORKSPACE_ACCESS_TOKEN}`
+          Authorization: `Bearer ${accessToken}`
         },
         body: JSON.stringify({
           addLabelIds: input.addLabelIds ?? [],
@@ -106,15 +108,11 @@ export class GoogleWorkspaceApiService implements GoogleWorkspaceService {
   }
 
   async listDriveFiles(input: {
+    requesterUserId: string;
     folderId?: string;
     pageSize?: number;
   }): Promise<Array<{ id: string; name: string; mimeType: string }>> {
-    if (!env.GOOGLE_WORKSPACE_ACCESS_TOKEN) {
-      return [
-        { id: 'mock-file-1', name: 'Operations Brief', mimeType: 'application/vnd.google-apps.document' },
-        { id: 'mock-file-2', name: 'Weekly Metrics', mimeType: 'application/vnd.google-apps.spreadsheet' }
-      ];
-    }
+    const accessToken = await this.getValidAccessToken(input.requesterUserId);
 
     const query = new URLSearchParams();
     query.set('pageSize', String(Math.min(input.pageSize ?? 20, 100)));
@@ -126,7 +124,7 @@ export class GoogleWorkspaceApiService implements GoogleWorkspaceService {
     const response = await this.callWithRetries(() =>
       fetch(`https://www.googleapis.com/drive/v3/files?${query.toString()}`, {
         headers: {
-          Authorization: `Bearer ${env.GOOGLE_WORKSPACE_ACCESS_TOKEN}`
+          Authorization: `Bearer ${accessToken}`
         }
       })
     );
@@ -136,6 +134,7 @@ export class GoogleWorkspaceApiService implements GoogleWorkspaceService {
   }
 
   async createDriveFolder(input: {
+    requesterUserId: string;
     name: string;
     parentFolderId?: string;
     actorRoles: string[];
@@ -148,19 +147,14 @@ export class GoogleWorkspaceApiService implements GoogleWorkspaceService {
       throw new GoogleWorkspaceError(400, 'INVALID_INPUT', 'Folder name is required');
     }
 
-    if (!env.GOOGLE_WORKSPACE_ACCESS_TOKEN) {
-      return {
-        id: `mock-folder-${Date.now()}`,
-        name: input.name.trim()
-      };
-    }
+    const accessToken = await this.getValidAccessToken(input.requesterUserId);
 
     const response = await this.callWithRetries(() =>
       fetch('https://www.googleapis.com/drive/v3/files', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${env.GOOGLE_WORKSPACE_ACCESS_TOKEN}`
+          Authorization: `Bearer ${accessToken}`
         },
         body: JSON.stringify({
           name: input.name.trim(),
@@ -175,6 +169,69 @@ export class GoogleWorkspaceApiService implements GoogleWorkspaceService {
       id: payload.id,
       name: payload.name
     };
+  }
+
+  private async getValidAccessToken(userId: string): Promise<string> {
+    const token = await this.authRepository.getGoogleWorkspaceTokenByUserId(userId);
+    if (!token) {
+      throw new GoogleWorkspaceError(
+        412,
+        'GOOGLE_TOKEN_NOT_CONNECTED',
+        'Google Workspace token is not connected for this user'
+      );
+    }
+
+    const expiresAtMs = new Date(token.expiresAt).getTime();
+    const nowWithSkewMs = Date.now() + 60_000;
+    if (expiresAtMs > nowWithSkewMs) {
+      return token.accessToken;
+    }
+
+    const refreshed = await this.refreshAccessToken(token.userId, token.refreshToken);
+    return refreshed.accessToken;
+  }
+
+  private async refreshAccessToken(userId: string, refreshToken: string) {
+    const clientId = env.GOOGLE_CLIENT_ID;
+    const clientSecret = env.GOOGLE_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      throw new GoogleWorkspaceError(500, 'GOOGLE_OAUTH_NOT_CONFIGURED', 'Google OAuth client is not configured');
+    }
+
+    const response = await this.callWithRetries(() =>
+      fetch(env.GOOGLE_TOKEN_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken
+        }).toString()
+      })
+    );
+
+    const payload = (await response.json()) as {
+      access_token: string;
+      expires_in?: number;
+      refresh_token?: string;
+      scope?: string;
+    };
+
+    if (!payload.access_token) {
+      throw new GoogleWorkspaceError(502, 'GOOGLE_REFRESH_FAILED', 'Google token refresh response missing access token');
+    }
+
+    return this.authRepository.upsertGoogleWorkspaceToken({
+      userId,
+      accessToken: payload.access_token,
+      refreshToken: payload.refresh_token ?? refreshToken,
+      expiresAt: new Date(Date.now() + (payload.expires_in ?? 3600) * 1000).toISOString(),
+      scope: payload.scope
+    });
   }
 
   private async callWithRetries(execute: () => Promise<Response>): Promise<Response> {
@@ -218,5 +275,5 @@ export class GoogleWorkspaceApiService implements GoogleWorkspaceService {
 }
 
 export function createGoogleWorkspaceService(): GoogleWorkspaceService {
-  return new GoogleWorkspaceApiService();
+  return new GoogleWorkspaceApiService(createAuthRepository());
 }

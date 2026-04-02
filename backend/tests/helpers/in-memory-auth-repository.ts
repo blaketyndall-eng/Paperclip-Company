@@ -1,10 +1,11 @@
 import { randomUUID } from 'crypto';
-import { Role, Session, User } from '../../src/models/auth.js';
+import { GoogleWorkspaceToken, Role, Session, User } from '../../src/models/auth.js';
 import { AuthRepository, CreateGoogleUserInput } from '../../src/services/auth-repository.js';
 
 export class InMemoryAuthRepository implements AuthRepository {
   private users = new Map<string, User>();
   private sessions = new Map<string, Session>();
+  private googleWorkspaceTokens = new Map<string, GoogleWorkspaceToken>();
   private auditEvents: Array<{
     id: string;
     userId: string;
@@ -92,6 +93,40 @@ export class InMemoryAuthRepository implements AuthRepository {
 
     this.sessions.delete(session.id);
     return true;
+  }
+
+  async upsertGoogleWorkspaceToken(input: {
+    userId: string;
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt: string;
+    scope?: string;
+  }): Promise<GoogleWorkspaceToken> {
+    const existing = this.googleWorkspaceTokens.get(input.userId);
+    const now = new Date().toISOString();
+    const refreshToken = input.refreshToken ?? existing?.refreshToken;
+
+    if (!refreshToken) {
+      throw new Error('refreshToken is required when creating initial Google workspace token');
+    }
+
+    const token: GoogleWorkspaceToken = {
+      id: existing?.id ?? randomUUID(),
+      userId: input.userId,
+      accessToken: input.accessToken,
+      refreshToken,
+      expiresAt: input.expiresAt,
+      scope: input.scope,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now
+    };
+
+    this.googleWorkspaceTokens.set(input.userId, token);
+    return token;
+  }
+
+  async getGoogleWorkspaceTokenByUserId(userId: string): Promise<GoogleWorkspaceToken | undefined> {
+    return this.googleWorkspaceTokens.get(userId);
   }
 
   async addAuditEvent(event: {

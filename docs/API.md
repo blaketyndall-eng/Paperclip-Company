@@ -118,6 +118,11 @@
 
 ## Google Connectors
 
+- Connector auth model:
+  - Uses per-user Google OAuth tokens persisted in backend storage.
+  - Access tokens are refreshed automatically from the stored refresh token when expired.
+  - If a user has not connected Google tokens yet, connector endpoints return `412 GOOGLE_TOKEN_NOT_CONNECTED`.
+
 - `GET /connectors/gmail/messages`
   - Access: any authenticated user
   - Query:
@@ -145,6 +150,15 @@
     - `name: string`
     - `parentFolderId?: string`
   - Creates Drive folder with connector retry handling.
+
+### Connector Integration Testing (Staging)
+
+- Enable integration tests against staging Google Workspace sandbox by setting:
+  - `STAGING_GOOGLE_CONNECTORS_ENABLED=true`
+  - `STAGING_GOOGLE_CONNECTORS_USER_EMAIL`
+  - `STAGING_GOOGLE_CONNECTORS_ACCESS_TOKEN`
+  - `STAGING_GOOGLE_CONNECTORS_REFRESH_TOKEN`
+  - and database env (`TEST_DATABASE_URL` or `DATABASE_URL`)
 
 ## Observability
 

@@ -411,7 +411,8 @@
                 }
               }
             }
-          }
+          },
+          "412": { "description": "Google token not connected for user" }
         }
       }
     },
@@ -429,7 +430,8 @@
         ],
         "responses": {
           "200": { "description": "Labels updated" },
-          "403": { "description": "Forbidden" }
+          "403": { "description": "Forbidden" },
+          "412": { "description": "Google token not connected for user" }
         }
       }
     },
@@ -453,7 +455,8 @@
                 }
               }
             }
-          }
+          },
+          "412": { "description": "Google token not connected for user" }
         }
       }
     },
@@ -463,7 +466,8 @@
         "security": [{ "bearerAuth": [] }],
         "responses": {
           "201": { "description": "Folder created" },
-          "403": { "description": "Forbidden" }
+          "403": { "description": "Forbidden" },
+          "412": { "description": "Google token not connected for user" }
         }
       }
     },
