@@ -97,4 +97,35 @@ describe('workflow routes', () => {
     expect(auditResponse.status).toBe(200);
     expect(auditResponse.body.events.length).toBeGreaterThanOrEqual(2);
   });
+
+  it('returns 409 when approving already-completed run', async () => {
+    const app = createApp();
+    const ownerToken = tokenFor('owner-4', ['operator']);
+    const approverToken = tokenFor('approver-2', ['approver']);
+
+    const workflowResponse = await request(app)
+      .post('/api/workflows')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ name: 'Claims Intake', template: 'claims_intake_v1' });
+
+    const runResponse = await request(app)
+      .post(`/api/workflows/${workflowResponse.body.workflow.id}/execute`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({});
+
+    const firstApprove = await request(app)
+      .put(`/api/runs/${runResponse.body.run.id}/approve`)
+      .set('Authorization', `Bearer ${approverToken}`)
+      .send({});
+
+    expect(firstApprove.status).toBe(200);
+
+    const secondApprove = await request(app)
+      .put(`/api/runs/${runResponse.body.run.id}/approve`)
+      .set('Authorization', `Bearer ${approverToken}`)
+      .send({});
+
+    expect(secondApprove.status).toBe(409);
+    expect(secondApprove.body.error).toBe('INVALID_RUN_STATE');
+  });
 });

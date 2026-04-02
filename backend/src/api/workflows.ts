@@ -1,10 +1,27 @@
-import { Router } from 'express';
+import { Response, Router } from 'express';
 import { jwtAuth } from '../middleware/jwt-auth.js';
 import { requireRoles } from '../middleware/rbac.js';
 import { createWorkflowRepository, WorkflowRepository } from '../services/workflow-repository.js';
+import { WorkflowService, WorkflowServiceError } from '../services/workflow-service.js';
 
 export function buildWorkflowRouter(repository: WorkflowRepository) {
   const workflowRouter = Router();
+  const service = new WorkflowService(repository);
+
+  function handleError(res: Response, error: unknown): void {
+    if (error instanceof WorkflowServiceError) {
+      res.status(error.statusCode).json({
+        error: error.code,
+        message: error.message
+      });
+      return;
+    }
+
+    res.status(500).json({
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'Unexpected workflow service failure'
+    });
+  }
 
   workflowRouter.post('/workflows', jwtAuth, requireRoles(['admin', 'operator', 'approver']), async (req, res) => {
     const auth = req.auth;
@@ -13,21 +30,17 @@ export function buildWorkflowRouter(repository: WorkflowRepository) {
       return;
     }
 
-    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
-    const template = typeof req.body?.template === 'string' ? req.body.template.trim() : '';
+    try {
+      const workflow = await service.createWorkflow({
+        ownerId: auth.sub,
+        name: typeof req.body?.name === 'string' ? req.body.name.trim() : '',
+        template: typeof req.body?.template === 'string' ? req.body.template.trim() : ''
+      });
 
-    if (!name || !template) {
-      res.status(400).json({ error: 'name and template are required' });
-      return;
+      res.status(201).json({ workflow });
+    } catch (error) {
+      handleError(res, error);
     }
-
-    const workflow = await repository.createWorkflow({
-      ownerId: auth.sub,
-      name,
-      template
-    });
-
-    res.status(201).json({ workflow });
   });
 
   workflowRouter.get('/workflows', jwtAuth, async (req, res) => {
@@ -37,7 +50,7 @@ export function buildWorkflowRouter(repository: WorkflowRepository) {
       return;
     }
 
-    const workflows = await repository.listWorkflowsByOwner(auth.sub);
+    const workflows = await service.listWorkflowsByOwner(auth.sub);
     res.status(200).json({ workflows });
   });
 
@@ -48,19 +61,16 @@ export function buildWorkflowRouter(repository: WorkflowRepository) {
       return;
     }
 
-    const workflow = await repository.getWorkflowById(req.params.workflowId);
-    if (!workflow) {
-      res.status(404).json({ error: 'Workflow not found' });
-      return;
+    try {
+      const runs = await service.listRuns({
+        workflowId: req.params.workflowId,
+        requesterUserId: auth.sub,
+        requesterRoles: auth.roles
+      });
+      res.status(200).json({ runs });
+    } catch (error) {
+      handleError(res, error);
     }
-
-    if (workflow.ownerId !== auth.sub && !auth.roles.includes('admin')) {
-      res.status(403).json({ error: 'Cannot view runs for this workflow' });
-      return;
-    }
-
-    const runs = await repository.listRuns(req.params.workflowId);
-    res.status(200).json({ runs });
   });
 
   workflowRouter.post('/workflows/:workflowId/execute', jwtAuth, requireRoles(['admin', 'operator', 'approver']), async (req, res) => {
@@ -70,25 +80,19 @@ export function buildWorkflowRouter(repository: WorkflowRepository) {
       return;
     }
 
-    const workflow = await repository.getWorkflowById(req.params.workflowId);
-    if (!workflow) {
-      res.status(404).json({ error: 'Workflow not found' });
-      return;
+    try {
+      const run = await service.executeWorkflow({
+        workflowId: req.params.workflowId,
+        requesterUserId: auth.sub,
+        requesterRoles: auth.roles,
+        triggerData: typeof req.body?.triggerData === 'object' && req.body?.triggerData !== null ? req.body.triggerData : {},
+        context: typeof req.body?.context === 'object' && req.body?.context !== null ? req.body.context : {}
+      });
+
+      res.status(201).json({ run });
+    } catch (error) {
+      handleError(res, error);
     }
-
-    if (workflow.ownerId !== auth.sub && !auth.roles.includes('admin')) {
-      res.status(403).json({ error: 'Cannot execute this workflow' });
-      return;
-    }
-
-    const run = await repository.createRun({
-      workflowId: req.params.workflowId,
-      createdBy: auth.sub,
-      triggerData: typeof req.body?.triggerData === 'object' && req.body?.triggerData !== null ? req.body.triggerData : {},
-      context: typeof req.body?.context === 'object' && req.body?.context !== null ? req.body.context : {}
-    });
-
-    res.status(201).json({ run });
   });
 
   workflowRouter.put('/runs/:runId/approve', jwtAuth, requireRoles(['admin', 'approver']), async (req, res) => {
@@ -98,18 +102,17 @@ export function buildWorkflowRouter(repository: WorkflowRepository) {
       return;
     }
 
-    const approvedRun = await repository.approveRun(
-      req.params.runId,
-      auth.sub,
-      typeof req.body?.metadata === 'object' && req.body?.metadata !== null ? req.body.metadata : undefined
-    );
+    try {
+      const approvedRun = await service.approveRun({
+        runId: req.params.runId,
+        actorUserId: auth.sub,
+        metadata: typeof req.body?.metadata === 'object' && req.body?.metadata !== null ? req.body.metadata : undefined
+      });
 
-    if (!approvedRun) {
-      res.status(404).json({ error: 'Run not found' });
-      return;
+      res.status(200).json({ run: approvedRun });
+    } catch (error) {
+      handleError(res, error);
     }
-
-    res.status(200).json({ run: approvedRun });
   });
 
   workflowRouter.put('/runs/:runId/reject', jwtAuth, requireRoles(['admin', 'approver']), async (req, res) => {
@@ -119,23 +122,36 @@ export function buildWorkflowRouter(repository: WorkflowRepository) {
       return;
     }
 
-    const rejectedRun = await repository.rejectRun(
-      req.params.runId,
-      auth.sub,
-      typeof req.body?.metadata === 'object' && req.body?.metadata !== null ? req.body.metadata : undefined
-    );
+    try {
+      const rejectedRun = await service.rejectRun({
+        runId: req.params.runId,
+        actorUserId: auth.sub,
+        metadata: typeof req.body?.metadata === 'object' && req.body?.metadata !== null ? req.body.metadata : undefined
+      });
 
-    if (!rejectedRun) {
-      res.status(404).json({ error: 'Run not found' });
-      return;
+      res.status(200).json({ run: rejectedRun });
+    } catch (error) {
+      handleError(res, error);
     }
-
-    res.status(200).json({ run: rejectedRun });
   });
 
   workflowRouter.get('/runs/:runId/audit', jwtAuth, async (req, res) => {
-    const events = await repository.listRunAuditEvents(req.params.runId);
-    res.status(200).json({ events });
+    const auth = req.auth;
+    if (!auth) {
+      res.status(401).json({ error: 'Missing auth context' });
+      return;
+    }
+
+    try {
+      const events = await service.listRunAuditEvents({
+        runId: req.params.runId,
+        requesterUserId: auth.sub,
+        requesterRoles: auth.roles
+      });
+      res.status(200).json({ events });
+    } catch (error) {
+      handleError(res, error);
+    }
   });
 
   return workflowRouter;

@@ -17,6 +17,7 @@ export interface WorkflowRepository {
     triggerData?: Record<string, unknown>;
     context?: Record<string, unknown>;
   }): Promise<WorkflowRun>;
+  getRunById(runId: string): Promise<WorkflowRun | undefined>;
   listRuns(workflowId: string): Promise<WorkflowRun[]>;
   approveRun(runId: string, actorUserId: string, metadata?: Record<string, unknown>): Promise<WorkflowRun | undefined>;
   rejectRun(runId: string, actorUserId: string, metadata?: Record<string, unknown>): Promise<WorkflowRun | undefined>;
@@ -197,6 +198,21 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
     return result.rows.map(toWorkflowRun);
   }
 
+  async getRunById(runId: string): Promise<WorkflowRun | undefined> {
+    const result = await this.pool.query(
+      `SELECT id, workflow_id, status, trigger_data, context, created_by, created_at, updated_at
+       FROM workflow_runs
+       WHERE id = $1`,
+      [runId]
+    );
+
+    if (result.rowCount === 0) {
+      return undefined;
+    }
+
+    return toWorkflowRun(result.rows[0]);
+  }
+
   async approveRun(runId: string, actorUserId: string, metadata?: Record<string, unknown>): Promise<WorkflowRun | undefined> {
     return this.transitionRun(runId, actorUserId, 'completed', 'run_approved', metadata);
   }
@@ -223,6 +239,7 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
          SET status = $1,
              updated_at = $2
          WHERE id = $3
+           AND status = 'pending_approval'
          RETURNING id, workflow_id, status, trigger_data, context, created_by, created_at, updated_at`,
         [status, now, runId]
       );

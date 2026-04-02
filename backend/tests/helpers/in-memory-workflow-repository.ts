@@ -67,6 +67,10 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     return Array.from(this.runs.values()).filter((r) => r.workflowId === workflowId);
   }
 
+  async getRunById(runId: string): Promise<WorkflowRun | undefined> {
+    return this.runs.get(runId);
+  }
+
   async approveRun(runId: string, actorUserId: string, metadata?: Record<string, unknown>): Promise<WorkflowRun | undefined> {
     const run = this.runs.get(runId);
     if (!run) {
