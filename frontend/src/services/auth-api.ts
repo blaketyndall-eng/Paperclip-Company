@@ -1,3 +1,5 @@
+"use client";
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -11,7 +13,7 @@ export interface AuthSessionPayload {
   user: AuthUser;
 }
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api';
 
 async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {

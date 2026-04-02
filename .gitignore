@@ -12,6 +12,7 @@ yarn-debug.log*
 dist/
 build/
 coverage/
+.next/
 
 # TypeScript
 *.tsbuildinfo

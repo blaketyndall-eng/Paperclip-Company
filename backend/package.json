@@ -13,8 +13,10 @@
     "db:migrate": "tsx src/scripts/run-migrations.ts"
   },
   "dependencies": {
+    "bullmq": "^5.16.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
+    "ioredis": "^5.4.1",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.13.1",
     "pino": "^9.5.0",

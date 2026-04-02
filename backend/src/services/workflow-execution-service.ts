@@ -1,4 +1,5 @@
 import { WorkflowRun } from '../models/workflow.js';
+import { AnthropicDraftAdapter, DraftGenerator } from './anthropic-draft-adapter.js';
 import { WorkflowRepository } from './workflow-repository.js';
 
 export class WorkflowExecutionError extends Error {
@@ -8,7 +9,19 @@ export class WorkflowExecutionError extends Error {
 }
 
 export class WorkflowExecutionService {
-  constructor(private readonly repository: WorkflowRepository) {}
+  constructor(
+    private readonly repository: WorkflowRepository,
+    private readonly draftGenerator: DraftGenerator = new AnthropicDraftAdapter()
+  ) {}
+
+  async executeRunById(runId: string, actorUserId: string): Promise<WorkflowRun> {
+    const run = await this.repository.getRunById(runId);
+    if (!run) {
+      throw new WorkflowExecutionError('Run not found for execution');
+    }
+
+    return this.executeInitialSteps(run, actorUserId);
+  }
 
   async executeInitialSteps(run: WorkflowRun, actorUserId: string): Promise<WorkflowRun> {
     await this.repository.updateStepStatus({
@@ -18,13 +31,28 @@ export class WorkflowExecutionService {
     });
 
     try {
-      const draft = this.generateDraftStub(run.triggerData, run.context);
+      if (run.triggerData.forceFailure === true) {
+        throw new WorkflowExecutionError('Draft generation failed due to forceFailure flag');
+      }
+
+      const draft = await this.draftGenerator.generate({
+        triggerData: run.triggerData,
+        context: run.context
+      });
 
       await this.repository.updateStepStatus({
         runId: run.id,
         stepType: 'draft_generation',
         status: 'completed',
-        output: draft
+        output: {
+          draftId: draft.draftId,
+          summary: draft.summary,
+          generatedAt: draft.generatedAt,
+          confidence: draft.confidence,
+          model: draft.model,
+          tokenUsage: draft.tokenUsage,
+          costUsd: draft.costUsd
+        }
       });
 
       await this.repository.createStep({
@@ -43,7 +71,11 @@ export class WorkflowExecutionService {
         actorUserId,
         action: 'draft_generated',
         metadata: {
-          draftId: draft.draftId
+          draftId: draft.draftId,
+          confidence: draft.confidence,
+          model: draft.model,
+          costUsd: draft.costUsd,
+          totalTokens: draft.tokenUsage.totalTokens
         }
       });
 
@@ -60,7 +92,13 @@ export class WorkflowExecutionService {
         runId: run.id,
         status: 'pending_approval',
         context: {
-          draft
+          draft,
+          llm: {
+            model: draft.model,
+            confidence: draft.confidence,
+            tokenUsage: draft.tokenUsage,
+            costUsd: draft.costUsd
+          }
         }
       });
 
@@ -106,22 +144,4 @@ export class WorkflowExecutionService {
     }
   }
 
-  private generateDraftStub(
-    triggerData: Record<string, unknown>,
-    context: Record<string, unknown>
-  ): { draftId: string; summary: string; generatedAt: string } {
-    const shouldFail = triggerData.forceFailure === true;
-    if (shouldFail) {
-      throw new WorkflowExecutionError('Draft generation failed due to forceFailure flag');
-    }
-
-    const source = typeof triggerData.source === 'string' ? triggerData.source : 'unknown';
-    const customerId = typeof context.customerId === 'string' ? context.customerId : 'n/a';
-
-    return {
-      draftId: `draft-${Date.now()}`,
-      summary: `Draft prepared for source=${source}, customer=${customerId}`,
-      generatedAt: new Date().toISOString()
-    };
-  }
 }

@@ -6,8 +6,8 @@ type CardProps = PropsWithChildren<{
 
 export function Card({ title, children }: CardProps) {
   return (
-    <section className="card">
-      <h2>{title}</h2>
+    <section className="mb-4 rounded-2xl border border-slate-300 bg-white/80 p-5 shadow-md backdrop-blur">
+      <h2 className="mb-3 text-lg font-semibold tracking-tight">{title}</h2>
       {children}
     </section>
   );

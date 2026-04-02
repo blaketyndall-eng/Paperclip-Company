@@ -1,9 +1,13 @@
+"use client";
+
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card } from '../components/Card';
 import { useAuth } from '../context/AuthContext';
 
-export function OAuthCallbackPage() {
+export function OAuthCallbackView() {
   const { completeOAuthCallback } = useAuth();
+  const router = useRouter();
   const [error, setError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -17,15 +21,15 @@ export function OAuthCallbackPage() {
 
     completeOAuthCallback(code)
       .then(() => {
-        window.history.replaceState({}, document.title, '/');
+        router.replace('/');
       })
       .catch((callbackError) => {
         setError(callbackError instanceof Error ? callbackError.message : 'OAuth callback failed');
       });
-  }, [completeOAuthCallback]);
+  }, [completeOAuthCallback, router]);
 
   return (
-    <main>
+    <main className="mx-auto flex min-h-screen max-w-5xl items-center justify-center p-6">
       <Card title="Completing sign-in">
         {error ? <p role="alert">{error}</p> : <p>Finalizing your secure session...</p>}
       </Card>

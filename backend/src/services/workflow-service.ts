@@ -1,6 +1,6 @@
 import { Workflow, WorkflowAuditEvent, WorkflowRun } from '../models/workflow.js';
-import { WorkflowExecutionService } from './workflow-execution-service.js';
 import { WorkflowRepository } from './workflow-repository.js';
+import { WorkflowExecutionQueue, createWorkflowExecutionQueue } from './workflow-execution-queue.js';
 
 export class WorkflowServiceError extends Error {
   constructor(
@@ -13,11 +13,10 @@ export class WorkflowServiceError extends Error {
 }
 
 export class WorkflowService {
-  private readonly executionService: WorkflowExecutionService;
-
-  constructor(private readonly repository: WorkflowRepository) {
-    this.executionService = new WorkflowExecutionService(repository);
-  }
+  constructor(
+    private readonly repository: WorkflowRepository,
+    private readonly executionQueue: WorkflowExecutionQueue = createWorkflowExecutionQueue(repository)
+  ) {}
 
   async createWorkflow(input: {
     ownerId: string;
@@ -77,7 +76,22 @@ export class WorkflowService {
       context: input.context
     });
 
-    return this.executionService.executeInitialSteps(run, input.requesterUserId);
+    await this.repository.appendRunAuditEvent({
+      runId: run.id,
+      actorUserId: input.requesterUserId,
+      action: 'run_execution_enqueued',
+      metadata: {
+        queueMode: 'workflow_execution'
+      }
+    });
+
+    await this.executionQueue.enqueue({
+      runId: run.id,
+      actorUserId: input.requesterUserId
+    });
+
+    const latest = await this.repository.getRunById(run.id);
+    return latest ?? run;
   }
 
   async approveRun(input: {

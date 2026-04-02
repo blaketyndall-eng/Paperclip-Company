@@ -2,11 +2,12 @@ import { Response, Router } from 'express';
 import { jwtAuth } from '../middleware/jwt-auth.js';
 import { requireRoles } from '../middleware/rbac.js';
 import { createWorkflowRepository, WorkflowRepository } from '../services/workflow-repository.js';
+import { WorkflowExecutionQueue, createWorkflowExecutionQueue } from '../services/workflow-execution-queue.js';
 import { WorkflowService, WorkflowServiceError } from '../services/workflow-service.js';
 
-export function buildWorkflowRouter(repository: WorkflowRepository) {
+export function buildWorkflowRouter(repository: WorkflowRepository, executionQueue?: WorkflowExecutionQueue) {
   const workflowRouter = Router();
-  const service = new WorkflowService(repository);
+  const service = new WorkflowService(repository, executionQueue ?? createWorkflowExecutionQueue(repository));
 
   function handleError(res: Response, error: unknown): void {
     if (error instanceof WorkflowServiceError) {
