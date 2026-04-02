@@ -2,6 +2,8 @@
 
 **Duration:** 12 weeks | **Team Size:** 3-4 people | **Go-Live Date:** Post-Week 12 Review
 
+> Implementation note: this document is the target roadmap. For current completion state, see `docs/STATUS.md`.
+
 ---
 
 ## Phase 1: Foundation & API Core (Weeks 1-4)

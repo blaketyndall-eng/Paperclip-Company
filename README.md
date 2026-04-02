@@ -1,16 +1,25 @@
-# Lightweight AI Workflow Platform - MVP Implementation Plan
+# Lightweight AI Workflow Platform - MVP
 
-**Status:** Production Planning | **Phase:** Architecture & Scaffolding | **Timeline:** 12 weeks to pilot-ready
+**Status:** Active implementation | **Current Phase:** Late Phase 1 (Weeks 1-4 mostly complete)
 
-This is a comprehensive implementation plan for building a production-grade MVP of a Google Workspace-first AI workflow automation platform targeted at small operations teams (10-100 people).
+Production-grade MVP for a Google Workspace-first AI workflow automation platform targeted at small operations teams (10-100 people).
 
 ## Quick Links
 
 - **[IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md)** — Phase-by-phase roadmap with milestones and acceptance criteria
+- **[docs/STATUS.md](./docs/STATUS.md)** — Live delivery status, completed milestones, and next priorities
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Technical design, stack decisions, and system diagrams
 - **[TESTING_STRATEGY.md](./TESTING_STRATEGY.md)** — Unit, integration, E2E test approach and metrics
 - **[DEPLOYMENT.md](./DEPLOYMENT.md)** — Staging, rollout, monitoring, and incident response
 - **[RUNBOOK.md](./RUNBOOK.md)** — Operational procedures, troubleshooting, and maintenance
+
+## Current Delivery Snapshot
+
+- Backend foundations complete: auth, sessions, RBAC, workflow lifecycle, audit trail, export endpoint.
+- Queue execution in place: BullMQ/Redis with inline fallback mode.
+- LLM orchestration in place: Anthropic + OpenAI + Gemini connectors with provider failover.
+- Frontend migrated to Next.js + Tailwind with login/callback/protected dashboard shell.
+- Full workspace validation currently green (`lint`, `test`, `build`).
 
 ## Overview
 
@@ -69,7 +78,7 @@ This is a comprehensive implementation plan for building a production-grade MVP 
 | **CI/CD** | GitHub Actions | Free, integrated, fast feedback |
 | **Secrets** | Google Secret Manager | Native to GCP, audit logging |
 
-## Deliverables
+## Deliverables (Roadmap Targets)
 
 ### By Week 4 (MVP Core)
 - [ ] Backend API scaffolding (auth, routing, middleware)
