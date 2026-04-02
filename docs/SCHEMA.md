@@ -75,6 +75,16 @@ Current migrations:
 - Applies unapplied `.sql` files in lexical order
 - Uses per-migration transactions
 
+## Integration Test Target
+
+- Run backend integration tests against real Postgres:
+	- `npm run test:integration --workspace backend`
+	- or from root: `npm run test:integration`
+- Provide database connection via:
+	- `TEST_DATABASE_URL` (preferred)
+	- fallback: `DATABASE_URL`
+- If no reachable Postgres is available, integration tests skip gracefully and do not fail CI/local runs.
+
 ## Execution Lifecycle Notes
 
 - New run rows are created with `status='created'`
