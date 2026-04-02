@@ -1,0 +1,85 @@
+import { randomUUID } from 'crypto';
+import { Role, Session, User } from '../../src/models/auth.js';
+import { AuthRepository, CreateGoogleUserInput } from '../../src/services/auth-repository.js';
+
+export class InMemoryAuthRepository implements AuthRepository {
+  private users = new Map<string, User>();
+  private sessions = new Map<string, Session>();
+  private auditEvents: Array<{
+    id: string;
+    userId: string;
+    action: string;
+    metadata: Record<string, string> | undefined;
+    createdAt: string;
+  }> = [];
+
+  async findUserByGoogleId(googleId: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find((user) => user.googleId === googleId);
+  }
+
+  async findUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find((user) => user.email === email);
+  }
+
+  async upsertGoogleUser(input: CreateGoogleUserInput): Promise<User> {
+    const existing = (await this.findUserByGoogleId(input.googleId)) ?? (await this.findUserByEmail(input.email));
+    const now = new Date().toISOString();
+
+    if (existing) {
+      const updated: User = {
+        ...existing,
+        email: input.email,
+        displayName: input.displayName,
+        googleId: input.googleId,
+        updatedAt: now
+      };
+      this.users.set(updated.id, updated);
+      return updated;
+    }
+
+    const created: User = {
+      id: randomUUID(),
+      email: input.email,
+      displayName: input.displayName,
+      googleId: input.googleId,
+      roles: ['operator'] as Role[],
+      createdAt: now,
+      updatedAt: now
+    };
+
+    this.users.set(created.id, created);
+    return created;
+  }
+
+  async createSession(session: Session): Promise<Session> {
+    this.sessions.set(session.id, session);
+    return session;
+  }
+
+  async addAuditEvent(event: {
+    userId: string;
+    action: 'login' | 'logout' | 'refresh' | 'role_change';
+    metadata?: Record<string, string>;
+  }): Promise<void> {
+    this.auditEvents.push({
+      id: randomUUID(),
+      userId: event.userId,
+      action: event.action,
+      metadata: event.metadata,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  async listAuditEvents(userId?: string): Promise<Array<{
+    id: string;
+    userId: string;
+    action: string;
+    metadata: Record<string, string> | undefined;
+    createdAt: string;
+  }>> {
+    if (!userId) {
+      return this.auditEvents;
+    }
+    return this.auditEvents.filter((event) => event.userId === userId);
+  }
+}

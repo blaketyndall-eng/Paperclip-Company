@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   display_name TEXT NOT NULL,
-  google_id TEXT,
+  google_id TEXT UNIQUE,
   roles TEXT[] NOT NULL DEFAULT ARRAY['operator'],
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS sessions (
   id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  refresh_token TEXT NOT NULL,
+  refresh_token TEXT NOT NULL UNIQUE,
   expires_at TIMESTAMP NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );

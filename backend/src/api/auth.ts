@@ -2,98 +2,183 @@ import { randomUUID } from 'crypto';
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
-import { Role, User } from '../models/auth.js';
-import { authStore } from '../services/auth-store.js';
+import { createAuthRepository, AuthRepository } from '../services/auth-repository.js';
 import { jwtAuth } from '../middleware/jwt-auth.js';
 import { requireRoles } from '../middleware/rbac.js';
+import { Session } from '../models/auth.js';
 
-export const authRouter = Router();
+interface GoogleProfile {
+  sub: string;
+  email: string;
+  name?: string;
+}
 
-authRouter.get('/auth/google', (_req, res) => {
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_REDIRECT_URI) {
-    res.status(500).json({
-      error: 'Google OAuth environment variables are not configured'
+interface ExchangeResult {
+  profile: GoogleProfile;
+  refreshToken?: string;
+  expiresIn?: number;
+}
+
+interface OAuthClient {
+  exchangeCodeForUser(code: string): Promise<ExchangeResult>;
+}
+
+class GoogleOAuthClient implements OAuthClient {
+  async exchangeCodeForUser(code: string): Promise<ExchangeResult> {
+    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.GOOGLE_REDIRECT_URI) {
+      throw new Error('Google OAuth environment variables are not configured');
+    }
+
+    const tokenBody = new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: env.GOOGLE_REDIRECT_URI,
+      grant_type: 'authorization_code'
     });
-    return;
+
+    const tokenResponse = await fetch(env.GOOGLE_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: tokenBody.toString()
+    });
+
+    if (!tokenResponse.ok) {
+      const details = await tokenResponse.text();
+      throw new Error(`Google token exchange failed: ${details}`);
+    }
+
+    const tokenPayload = (await tokenResponse.json()) as {
+      access_token: string;
+      expires_in?: number;
+      refresh_token?: string;
+    };
+
+    const profileResponse = await fetch(env.GOOGLE_USERINFO_URL, {
+      headers: {
+        Authorization: `Bearer ${tokenPayload.access_token}`
+      }
+    });
+
+    if (!profileResponse.ok) {
+      const details = await profileResponse.text();
+      throw new Error(`Google userinfo fetch failed: ${details}`);
+    }
+
+    const profile = (await profileResponse.json()) as GoogleProfile;
+    if (!profile.sub || !profile.email) {
+      throw new Error('Google userinfo response missing required fields');
+    }
+
+    return {
+      profile,
+      refreshToken: tokenPayload.refresh_token,
+      expiresIn: tokenPayload.expires_in
+    };
   }
+}
 
-  const scope = [
-    'openid',
-    'email',
-    'profile'
-  ].join(' ');
+export function buildAuthRouter(
+  repository: AuthRepository,
+  oauthClient: OAuthClient = new GoogleOAuthClient()
+) {
+  const authRouter = Router();
 
-  const params = new URLSearchParams({
-    client_id: env.GOOGLE_CLIENT_ID,
-    redirect_uri: env.GOOGLE_REDIRECT_URI,
-    response_type: 'code',
-    scope,
-    access_type: 'offline',
-    prompt: 'consent'
+  authRouter.get('/auth/google', (_req, res) => {
+    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_REDIRECT_URI) {
+      res.status(500).json({
+        error: 'Google OAuth environment variables are not configured'
+      });
+      return;
+    }
+
+    const scope = ['openid', 'email', 'profile'].join(' ');
+
+    const params = new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID,
+      redirect_uri: env.GOOGLE_REDIRECT_URI,
+      response_type: 'code',
+      scope,
+      access_type: 'offline',
+      prompt: 'consent'
+    });
+
+    res.status(200).json({
+      authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+    });
   });
 
-  res.status(200).json({
-    message: 'OAuth skeleton ready: redirect client to URL below',
-    authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+  authRouter.get('/auth/google/callback', async (req, res) => {
+    const code = req.query.code;
+
+    if (!code || typeof code !== 'string') {
+      res.status(400).json({ error: 'Missing authorization code' });
+      return;
+    }
+
+    try {
+      const exchange = await oauthClient.exchangeCodeForUser(code);
+      const user = await repository.upsertGoogleUser({
+        email: exchange.profile.email,
+        displayName: exchange.profile.name ?? exchange.profile.email,
+        googleId: exchange.profile.sub
+      });
+
+      const now = new Date();
+      const session: Session = {
+        id: randomUUID(),
+        userId: user.id,
+        refreshToken: exchange.refreshToken ?? randomUUID(),
+        expiresAt: new Date(now.getTime() + (exchange.expiresIn ?? 3600) * 1000).toISOString(),
+        createdAt: now.toISOString()
+      };
+
+      await repository.createSession(session);
+      await repository.addAuditEvent({
+        userId: user.id,
+        action: 'login',
+        metadata: {
+          provider: 'google'
+        }
+      });
+
+      const token = jwt.sign(
+        {
+          sub: user.id,
+          email: user.email,
+          roles: user.roles
+        },
+        env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+
+      res.status(200).json({
+        token,
+        user
+      });
+    } catch (error) {
+      res.status(502).json({
+        error: 'OAuth callback processing failed',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
   });
-});
 
-authRouter.get('/auth/google/callback', (req, res) => {
-  const code = req.query.code;
-
-  // Week 2 skeleton: we validate callback shape and stub user/session creation.
-  if (!code || typeof code !== 'string') {
-    res.status(400).json({ error: 'Missing authorization code' });
-    return;
-  }
-
-  const demoRoles: Role[] = ['operator'];
-  const now = new Date().toISOString();
-
-  const user: User = {
-    id: randomUUID(),
-    email: 'oauth-user@example.com',
-    displayName: 'OAuth User',
-    roles: demoRoles,
-    createdAt: now,
-    updatedAt: now
-  };
-
-  authStore.upsertUser(user);
-
-  const token = jwt.sign(
-    {
-      sub: user.id,
-      email: user.email,
-      roles: user.roles
-    },
-    env.JWT_SECRET,
-    { expiresIn: '1h' }
-  );
-
-  authStore.addAuditEvent({
-    id: randomUUID(),
-    userId: user.id,
-    action: 'login',
-    createdAt: now
+  authRouter.get('/auth/me', jwtAuth, (req, res) => {
+    res.status(200).json({
+      user: req.auth
+    });
   });
 
-  res.status(200).json({
-    message: 'OAuth callback skeleton executed',
-    token,
-    user
+  authRouter.get('/auth/admin/audit-events', jwtAuth, requireRoles(['admin']), async (req, res) => {
+    const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const events = await repository.listAuditEvents(userId);
+    res.status(200).json({ events });
   });
-});
 
-authRouter.get('/auth/me', jwtAuth, (req, res) => {
-  res.status(200).json({
-    user: req.auth
-  });
-});
+  return authRouter;
+}
 
-authRouter.get('/auth/admin/audit-events', jwtAuth, requireRoles(['admin']), (req, res) => {
-  const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
-  res.status(200).json({
-    events: authStore.listAuditEvents(userId)
-  });
-});
+export const authRouter = buildAuthRouter(createAuthRepository());
