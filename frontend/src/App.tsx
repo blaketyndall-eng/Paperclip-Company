@@ -1,5 +1,6 @@
 "use client";
 
+import React from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DashboardView } from './views/DashboardView';
 import { LoginView } from './views/LoginView';

@@ -63,6 +63,11 @@
 
 ## Workflows
 
+- Draft generation provider chain:
+  - Supports `anthropic`, `openai`, and `gemini` connectors.
+  - Provider order is configured by `LLM_PROVIDER_ORDER`.
+  - If no provider credentials are configured, the system falls back to the local draft stub.
+
 - `POST /workflows`
   - Roles: `admin`, `operator`, `approver`
   - Body:
