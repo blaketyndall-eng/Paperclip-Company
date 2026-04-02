@@ -63,6 +63,41 @@
           "updatedAt": { "type": "string", "format": "date-time" }
         },
         "required": ["id", "workflowId", "status", "triggerData", "context", "createdBy", "createdAt", "updatedAt"]
+      },
+      "AuthSessionResponse": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string" },
+          "refreshToken": { "type": "string" },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "email": { "type": "string" },
+              "displayName": { "type": "string" },
+              "roles": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["id", "email", "displayName", "roles"]
+          }
+        },
+        "required": ["token", "refreshToken", "user"]
+      },
+      "GmailMessage": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "threadId": { "type": "string" }
+        },
+        "required": ["id", "threadId"]
+      },
+      "DriveFile": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "mimeType": { "type": "string" }
+        },
+        "required": ["id", "name", "mimeType"]
       }
     }
   },
@@ -108,9 +143,78 @@
           }
         ],
         "responses": {
-          "200": { "description": "Authenticated successfully" },
+          "200": {
+            "description": "Authenticated successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthSessionResponse" }
+              }
+            }
+          },
           "400": { "description": "Missing authorization code" },
           "502": { "description": "OAuth exchange failure" }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "summary": "Rotate refresh token and issue new JWT",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": { "type": "string" }
+                },
+                "required": ["refreshToken"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JWT refreshed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthSessionResponse" }
+              }
+            }
+          },
+          "401": { "description": "Invalid or expired refresh token" }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "summary": "Invalidate refresh session",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": { "type": "string" }
+                },
+                "required": ["refreshToken"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Session invalidated" }
+        }
+      }
+    },
+    "/auth/admin/audit-events": {
+      "get": {
+        "summary": "List auth audit events",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Audit events list" },
+          "403": { "description": "Forbidden" }
         }
       }
     },
@@ -265,6 +369,111 @@
           "200": { "description": "Audit events list" },
           "403": { "description": "Forbidden" },
           "404": { "description": "Run not found" }
+        }
+      }
+    },
+    "/runs/{runId}/export": {
+      "post": {
+        "summary": "Export run payload",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Export payload generated" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Run not found" }
+        }
+      }
+    },
+    "/connectors/gmail/messages": {
+      "get": {
+        "summary": "List Gmail messages",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Messages fetched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "messages": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/GmailMessage" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/connectors/gmail/messages/{messageId}/labels": {
+      "post": {
+        "summary": "Apply Gmail labels",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Labels updated" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/connectors/drive/files": {
+      "get": {
+        "summary": "List Drive files",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Files fetched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "files": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/DriveFile" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/connectors/drive/folders": {
+      "post": {
+        "summary": "Create Drive folder",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "201": { "description": "Folder created" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Get service metrics snapshot",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Metrics snapshot" },
+          "403": { "description": "Forbidden" }
         }
       }
     }

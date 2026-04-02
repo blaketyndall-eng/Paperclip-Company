@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand tests/unit",
+    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand tests/e2e",
     "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand tests/integration",
     "lint": "tsc --noEmit",
     "db:migrate": "tsx src/scripts/run-migrations.ts"

@@ -116,6 +116,42 @@
     - `auditEvents[]`
     - `exportedAt`
 
+## Google Connectors
+
+- `GET /connectors/gmail/messages`
+  - Access: any authenticated user
+  - Query:
+    - `labelIds` (comma-separated)
+    - `maxResults`
+  - Returns minimal Gmail message descriptors.
+
+- `POST /connectors/gmail/messages/:messageId/labels`
+  - Roles: `admin`, `operator`
+  - Body:
+    - `addLabelIds?: string[]`
+    - `removeLabelIds?: string[]`
+  - Applies Gmail labels with connector retry handling.
+
+- `GET /connectors/drive/files`
+  - Access: any authenticated user
+  - Query:
+    - `folderId?`
+    - `pageSize?`
+  - Returns Drive files for folder scope.
+
+- `POST /connectors/drive/folders`
+  - Roles: `admin`, `operator`
+  - Body:
+    - `name: string`
+    - `parentFolderId?: string`
+  - Creates Drive folder with connector retry handling.
+
+## Observability
+
+- `GET /metrics`
+  - Role: `admin`
+  - Returns in-memory metrics snapshot including request counts, errors, and p95 latency.
+
 ## Standard Error Shape
 
 ```json

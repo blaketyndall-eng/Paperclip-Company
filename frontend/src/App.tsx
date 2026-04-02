@@ -6,7 +6,7 @@ import { DashboardView } from './views/DashboardView';
 import { LoginView } from './views/LoginView';
 
 function RootApp() {
-  const { status, user, logoutUser, can } = useAuth();
+  const { status, user, token, logoutUser, can } = useAuth();
 
   if (status === 'loading') {
     return (
@@ -23,7 +23,7 @@ function RootApp() {
     return <LoginView />;
   }
 
-  return <DashboardView user={user} can={can} onLogout={logoutUser} />;
+  return <DashboardView user={user} token={token ?? ''} can={can} onLogout={logoutUser} />;
 }
 
 export default function App() {

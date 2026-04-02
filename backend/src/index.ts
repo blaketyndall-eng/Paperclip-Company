@@ -5,8 +5,11 @@ import { healthRouter } from './api/health.js';
 import { authRouter } from './api/auth.js';
 import { docsRouter } from './api/docs.js';
 import { buildWorkflowRouter } from './api/workflows.js';
+import { connectorsRouter } from './api/connectors.js';
+import { metricsRouter } from './api/metrics.js';
 import { env } from './config/env.js';
 import { errorHandler } from './middleware/error-handler.js';
+import { observabilityMiddleware } from './middleware/request-observability.js';
 import { createWorkflowRepository } from './services/workflow-repository.js';
 import { createWorkflowExecutionQueue } from './services/workflow-execution-queue.js';
 
@@ -16,10 +19,13 @@ const workflowRepository = createWorkflowRepository();
 const executionQueue = createWorkflowExecutionQueue(workflowRepository);
 
 app.use(express.json());
+app.use(observabilityMiddleware);
 app.use('/api', healthRouter);
 app.use('/api', docsRouter);
 app.use('/api', authRouter);
+app.use('/api', connectorsRouter);
 app.use('/api', buildWorkflowRouter(workflowRepository, executionQueue));
+app.use('/api', metricsRouter);
 app.use(errorHandler);
 
 export function startServer(): void {

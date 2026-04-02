@@ -2,11 +2,33 @@
   "alerts": [
     {
       "name": "high-error-rate",
-      "threshold": "error_rate > 1% for 5m"
+      "threshold": "api_error_rate_percent > 1 for 5m",
+      "severity": "critical",
+      "action": "page-oncall"
     },
     {
       "name": "high-latency",
-      "threshold": "p95_latency > 5000ms for 10m"
+      "threshold": "api_p95_latency_ms > 1000 for 10m",
+      "severity": "warning",
+      "action": "investigate"
+    },
+    {
+      "name": "workflow-queue-depth",
+      "threshold": "workflow_queue_depth > 100 for 10m",
+      "severity": "warning",
+      "action": "scale-workers"
+    },
+    {
+      "name": "connector-error-spike",
+      "threshold": "google_connector_error_rate_percent > 2 for 10m",
+      "severity": "warning",
+      "action": "check-google-api-quota-and-permissions"
+    },
+    {
+      "name": "metrics-endpoint-stale",
+      "threshold": "metrics_snapshot_age_seconds > 120 for 5m",
+      "severity": "warning",
+      "action": "restart-api-and-check-observability-middleware"
     }
   ]
 }
