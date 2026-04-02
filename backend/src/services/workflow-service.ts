@@ -1,4 +1,5 @@
 import { Workflow, WorkflowAuditEvent, WorkflowRun } from '../models/workflow.js';
+import { WorkflowExecutionService } from './workflow-execution-service.js';
 import { WorkflowRepository } from './workflow-repository.js';
 
 export class WorkflowServiceError extends Error {
@@ -12,7 +13,11 @@ export class WorkflowServiceError extends Error {
 }
 
 export class WorkflowService {
-  constructor(private readonly repository: WorkflowRepository) {}
+  private readonly executionService: WorkflowExecutionService;
+
+  constructor(private readonly repository: WorkflowRepository) {
+    this.executionService = new WorkflowExecutionService(repository);
+  }
 
   async createWorkflow(input: {
     ownerId: string;
@@ -65,12 +70,14 @@ export class WorkflowService {
       throw new WorkflowServiceError(403, 'FORBIDDEN', 'Cannot execute this workflow');
     }
 
-    return this.repository.createRun({
+    const run = await this.repository.createRun({
       workflowId: input.workflowId,
       createdBy: input.requesterUserId,
       triggerData: input.triggerData,
       context: input.context
     });
+
+    return this.executionService.executeInitialSteps(run, input.requesterUserId);
   }
 
   async approveRun(input: {

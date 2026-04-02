@@ -45,6 +45,32 @@ describe('workflow routes', () => {
     expect(runResponse.body.run.status).toBe('pending_approval');
   });
 
+  it('marks run as failed when draft generation stub fails', async () => {
+    const app = createApp();
+    const ownerToken = tokenFor('owner-fail-1', ['operator']);
+
+    const workflowResponse = await request(app)
+      .post('/api/workflows')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ name: 'Failure Path', template: 'claims_intake_v1' });
+
+    const runResponse = await request(app)
+      .post(`/api/workflows/${workflowResponse.body.workflow.id}/execute`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ triggerData: { forceFailure: true } });
+
+    expect(runResponse.status).toBe(201);
+    expect(runResponse.body.run.status).toBe('failed');
+
+    const auditResponse = await request(app)
+      .get(`/api/runs/${runResponse.body.run.id}/audit`)
+      .set('Authorization', `Bearer ${ownerToken}`);
+
+    expect(auditResponse.status).toBe(200);
+    const actions = auditResponse.body.events.map((event: { action: string }) => event.action);
+    expect(actions).toContain('run_failed');
+  });
+
   it('requires approver role for approve endpoint', async () => {
     const app = createApp();
     const ownerToken = tokenFor('owner-2', ['operator']);

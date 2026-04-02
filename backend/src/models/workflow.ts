@@ -8,6 +8,9 @@ export const workflowRunStatuses = [
 
 export type WorkflowRunStatus = (typeof workflowRunStatuses)[number];
 
+export const workflowStepStatuses = ['pending', 'in_progress', 'completed', 'failed', 'rejected'] as const;
+export type WorkflowStepStatus = (typeof workflowStepStatuses)[number];
+
 export interface Workflow {
   id: string;
   ownerId: string;
@@ -27,6 +30,19 @@ export interface WorkflowRun {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WorkflowStep {
+  id: string;
+  runId: string;
+  stepIndex: number;
+  stepType: string;
+  input: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  status: WorkflowStepStatus;
+  actedBy?: string;
+  actedAt?: string;
+  createdAt: string;
 }
 
 export interface WorkflowAuditEvent {

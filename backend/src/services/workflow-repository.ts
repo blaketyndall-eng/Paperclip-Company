@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { Pool } from 'pg';
 import { getPool } from '../db/pool.js';
-import { Workflow, WorkflowAuditEvent, WorkflowRun } from '../models/workflow.js';
+import { Workflow, WorkflowAuditEvent, WorkflowRun, WorkflowStep, WorkflowStepStatus } from '../models/workflow.js';
 
 export interface WorkflowRepository {
   createWorkflow(input: {
@@ -17,6 +17,32 @@ export interface WorkflowRepository {
     triggerData?: Record<string, unknown>;
     context?: Record<string, unknown>;
   }): Promise<WorkflowRun>;
+  createStep(input: {
+    runId: string;
+    stepIndex: number;
+    stepType: string;
+    input: Record<string, unknown>;
+    output?: Record<string, unknown>;
+    status: WorkflowStepStatus;
+  }): Promise<WorkflowStep>;
+  updateStepStatus(input: {
+    runId: string;
+    stepType: string;
+    status: WorkflowStepStatus;
+    output?: Record<string, unknown>;
+    actedBy?: string;
+  }): Promise<WorkflowStep | undefined>;
+  updateRunStatus(input: {
+    runId: string;
+    status: WorkflowRun['status'];
+    context?: Record<string, unknown>;
+  }): Promise<WorkflowRun | undefined>;
+  appendRunAuditEvent(input: {
+    runId: string;
+    actorUserId: string;
+    action: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void>;
   getRunById(runId: string): Promise<WorkflowRun | undefined>;
   listRuns(workflowId: string): Promise<WorkflowRun[]>;
   approveRun(runId: string, actorUserId: string, metadata?: Record<string, unknown>): Promise<WorkflowRun | undefined>;
@@ -63,6 +89,32 @@ function toWorkflowRun(row: {
     createdBy: row.created_by,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
+  };
+}
+
+function toWorkflowStep(row: {
+  id: string;
+  run_id: string;
+  step_index: number;
+  step_type: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown> | null;
+  status: WorkflowStepStatus;
+  acted_by: string | null;
+  acted_at: Date | null;
+  created_at: Date;
+}): WorkflowStep {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    stepIndex: row.step_index,
+    stepType: row.step_type,
+    input: row.input,
+    output: row.output ?? undefined,
+    status: row.status,
+    actedBy: row.acted_by ?? undefined,
+    actedAt: row.acted_at ? row.acted_at.toISOString() : undefined,
+    createdAt: row.created_at.toISOString()
   };
 }
 
@@ -150,30 +202,21 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
 
       const runResult = await client.query(
         `INSERT INTO workflow_runs (id, workflow_id, status, trigger_data, context, created_by, created_at, updated_at)
-         VALUES ($1, $2, 'pending_approval', $3, $4, $5, $6, $6)
+         VALUES ($1, $2, 'created', $3, $4, $5, $6, $6)
          RETURNING id, workflow_id, status, trigger_data, context, created_by, created_at, updated_at`,
         [id, input.workflowId, triggerData, context, input.createdBy, now]
       );
 
       await client.query(
         `INSERT INTO workflow_steps (id, run_id, step_index, step_type, input, output, status, created_at)
-         VALUES ($1, $2, 1, 'draft_generation', $3, $4, 'completed', $5),
-                ($6, $2, 2, 'human_approval', $7, NULL, 'pending', $5)`,
-        [
-          randomUUID(),
-          id,
-          triggerData,
-          { note: 'Generated draft context for review' },
-          now,
-          randomUUID(),
-          context
-        ]
+         VALUES ($1, $2, 1, 'draft_generation', $3, NULL, 'pending', $4)`,
+        [randomUUID(), id, triggerData, now]
       );
 
       await client.query(
         `INSERT INTO workflow_audit_events (id, workflow_id, run_id, actor_user_id, action, metadata, created_at)
          VALUES ($1, $2, $3, $4, 'run_created', $5, $6)`,
-        [randomUUID(), input.workflowId, id, input.createdBy, { status: 'pending_approval' }, now]
+        [randomUUID(), input.workflowId, id, input.createdBy, { status: 'created' }, now]
       );
 
       await client.query('COMMIT');
@@ -184,6 +227,100 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
     } finally {
       client.release();
     }
+  }
+
+  async createStep(input: {
+    runId: string;
+    stepIndex: number;
+    stepType: string;
+    input: Record<string, unknown>;
+    output?: Record<string, unknown>;
+    status: WorkflowStepStatus;
+  }): Promise<WorkflowStep> {
+    const now = new Date();
+    const result = await this.pool.query(
+      `INSERT INTO workflow_steps (id, run_id, step_index, step_type, input, output, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, run_id, step_index, step_type, input, output, status, acted_by, acted_at, created_at`,
+      [randomUUID(), input.runId, input.stepIndex, input.stepType, input.input, input.output ?? null, input.status, now]
+    );
+
+    return toWorkflowStep(result.rows[0]);
+  }
+
+  async updateStepStatus(input: {
+    runId: string;
+    stepType: string;
+    status: WorkflowStepStatus;
+    output?: Record<string, unknown>;
+    actedBy?: string;
+  }): Promise<WorkflowStep | undefined> {
+    const now = new Date();
+    const result = await this.pool.query(
+      `UPDATE workflow_steps
+       SET status = $1,
+           output = $2,
+           acted_by = $3,
+           acted_at = $4
+       WHERE run_id = $5
+         AND step_type = $6
+       RETURNING id, run_id, step_index, step_type, input, output, status, acted_by, acted_at, created_at`,
+      [input.status, input.output ?? null, input.actedBy ?? null, input.actedBy ? now : null, input.runId, input.stepType]
+    );
+
+    if (result.rowCount === 0) {
+      return undefined;
+    }
+
+    return toWorkflowStep(result.rows[0]);
+  }
+
+  async updateRunStatus(input: {
+    runId: string;
+    status: WorkflowRun['status'];
+    context?: Record<string, unknown>;
+  }): Promise<WorkflowRun | undefined> {
+    const now = new Date();
+    const current = await this.getRunById(input.runId);
+    if (!current) {
+      return undefined;
+    }
+
+    const mergedContext = input.context ? { ...current.context, ...input.context } : current.context;
+
+    const result = await this.pool.query(
+      `UPDATE workflow_runs
+       SET status = $1,
+           context = $2,
+           updated_at = $3
+       WHERE id = $4
+       RETURNING id, workflow_id, status, trigger_data, context, created_by, created_at, updated_at`,
+      [input.status, mergedContext, now, input.runId]
+    );
+
+    if (result.rowCount === 0) {
+      return undefined;
+    }
+
+    return toWorkflowRun(result.rows[0]);
+  }
+
+  async appendRunAuditEvent(input: {
+    runId: string;
+    actorUserId: string;
+    action: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    const run = await this.getRunById(input.runId);
+    if (!run) {
+      return;
+    }
+
+    await this.pool.query(
+      `INSERT INTO workflow_audit_events (id, workflow_id, run_id, actor_user_id, action, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [randomUUID(), run.workflowId, input.runId, input.actorUserId, input.action, input.metadata ?? null, new Date()]
+    );
   }
 
   async listRuns(workflowId: string): Promise<WorkflowRun[]> {

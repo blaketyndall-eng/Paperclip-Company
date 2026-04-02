@@ -41,7 +41,7 @@ Current migrations:
 - `workflow_runs`
 	- `id UUID PK`
 	- `workflow_id FK -> workflows.id`
-	- `status` (`pending_approval`, `completed`, `rejected`, ...)
+	- `status` (`created`, `pending_approval`, `completed`, `rejected`, `failed`)
 	- `trigger_data JSONB`
 	- `context JSONB`
 	- `created_by FK -> users.id`
@@ -54,7 +54,7 @@ Current migrations:
 	- `step_type`
 	- `input JSONB`
 	- `output JSONB`
-	- `status`
+	- `status` (`pending`, `in_progress`, `completed`, `failed`, `rejected`)
 	- `acted_by FK -> users.id`
 	- `acted_at`
 	- `created_at`
@@ -74,4 +74,17 @@ Current migrations:
 - Maintains `schema_migrations` table
 - Applies unapplied `.sql` files in lexical order
 - Uses per-migration transactions
+
+## Execution Lifecycle Notes
+
+- New run rows are created with `status='created'`
+- `draft_generation` step row is inserted as `pending`
+- On success:
+	- draft step transitions `pending -> in_progress -> completed`
+	- `human_approval` step row is inserted with `status='pending'`
+	- run transitions `created -> pending_approval`
+- On failure:
+	- draft step transitions to `failed`
+	- run transitions `created -> failed`
+	- failure reason is appended into run `context`
 
