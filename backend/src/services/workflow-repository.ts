@@ -44,6 +44,7 @@ export interface WorkflowRepository {
     metadata?: Record<string, unknown>;
   }): Promise<void>;
   getRunById(runId: string): Promise<WorkflowRun | undefined>;
+  listRunSteps(runId: string): Promise<WorkflowStep[]>;
   listRuns(workflowId: string): Promise<WorkflowRun[]>;
   approveRun(runId: string, actorUserId: string, metadata?: Record<string, unknown>): Promise<WorkflowRun | undefined>;
   rejectRun(runId: string, actorUserId: string, metadata?: Record<string, unknown>): Promise<WorkflowRun | undefined>;
@@ -348,6 +349,18 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
     }
 
     return toWorkflowRun(result.rows[0]);
+  }
+
+  async listRunSteps(runId: string): Promise<WorkflowStep[]> {
+    const result = await this.pool.query(
+      `SELECT id, run_id, step_index, step_type, input, output, status, acted_by, acted_at, created_at
+       FROM workflow_steps
+       WHERE run_id = $1
+       ORDER BY step_index ASC`,
+      [runId]
+    );
+
+    return result.rows.map(toWorkflowStep);
   }
 
   async approveRun(runId: string, actorUserId: string, metadata?: Record<string, unknown>): Promise<WorkflowRun | undefined> {

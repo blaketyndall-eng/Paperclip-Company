@@ -156,6 +156,7 @@ export function buildAuthRouter(
 
       res.status(200).json({
         token,
+        refreshToken: session.refreshToken,
         user
       });
     } catch (error) {
@@ -170,6 +171,89 @@ export function buildAuthRouter(
     res.status(200).json({
       user: req.auth
     });
+  });
+
+  authRouter.post('/auth/refresh', async (req, res) => {
+    const refreshToken = typeof req.body?.refreshToken === 'string' ? req.body.refreshToken : '';
+    if (!refreshToken) {
+      res.status(400).json({ error: 'Missing refresh token' });
+      return;
+    }
+
+    const session = await repository.getSessionByRefreshToken(refreshToken);
+    if (!session) {
+      res.status(401).json({ error: 'Invalid refresh token' });
+      return;
+    }
+
+    if (new Date(session.expiresAt).getTime() <= Date.now()) {
+      await repository.deleteSessionByRefreshToken(refreshToken);
+      res.status(401).json({ error: 'Refresh token expired' });
+      return;
+    }
+
+    const user = await repository.findUserById(session.userId);
+    if (!user) {
+      await repository.deleteSessionByRefreshToken(refreshToken);
+      res.status(401).json({ error: 'User for refresh token no longer exists' });
+      return;
+    }
+
+    const now = new Date();
+    const nextRefreshToken = randomUUID();
+    const refreshedSession = await repository.rotateSessionRefreshToken({
+      sessionId: session.id,
+      refreshToken: nextRefreshToken,
+      expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
+    });
+
+    if (!refreshedSession) {
+      res.status(500).json({ error: 'Unable to rotate refresh token' });
+      return;
+    }
+
+    await repository.addAuditEvent({
+      userId: user.id,
+      action: 'refresh',
+      metadata: { sessionId: refreshedSession.id }
+    });
+
+    const token = jwt.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        roles: user.roles
+      },
+      env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.status(200).json({
+      token,
+      refreshToken: refreshedSession.refreshToken,
+      user
+    });
+  });
+
+  authRouter.post('/auth/logout', async (req, res) => {
+    const refreshToken = typeof req.body?.refreshToken === 'string' ? req.body.refreshToken : '';
+    if (!refreshToken) {
+      res.status(400).json({ error: 'Missing refresh token' });
+      return;
+    }
+
+    const session = await repository.getSessionByRefreshToken(refreshToken);
+    const removed = await repository.deleteSessionByRefreshToken(refreshToken);
+
+    if (removed && session) {
+      await repository.addAuditEvent({
+        userId: session.userId,
+        action: 'logout',
+        metadata: { sessionId: session.id }
+      });
+    }
+
+    res.status(200).json({ loggedOut: true });
   });
 
   authRouter.get('/auth/admin/audit-events', jwtAuth, requireRoles(['admin']), async (req, res) => {

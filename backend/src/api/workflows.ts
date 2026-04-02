@@ -154,6 +154,29 @@ export function buildWorkflowRouter(repository: WorkflowRepository) {
     }
   });
 
+  workflowRouter.post('/runs/:runId/export', jwtAuth, async (req, res) => {
+    const auth = req.auth;
+    if (!auth) {
+      res.status(401).json({ error: 'Missing auth context' });
+      return;
+    }
+
+    try {
+      const exportPayload = await service.exportRun({
+        runId: req.params.runId,
+        requesterUserId: auth.sub,
+        requesterRoles: auth.roles
+      });
+
+      res.status(200).json({
+        fileName: `run-${req.params.runId}-export.json`,
+        export: exportPayload
+      });
+    } catch (error) {
+      handleError(res, error);
+    }
+  });
+
   return workflowRouter;
 }
 

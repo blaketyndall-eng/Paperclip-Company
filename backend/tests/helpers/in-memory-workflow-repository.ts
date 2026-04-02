@@ -172,6 +172,10 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     return this.runs.get(runId);
   }
 
+  async listRunSteps(runId: string): Promise<WorkflowStep[]> {
+    return this.stepsByRun.get(runId) ?? [];
+  }
+
   async approveRun(runId: string, actorUserId: string, metadata?: Record<string, unknown>): Promise<WorkflowRun | undefined> {
     const run = this.runs.get(runId);
     if (!run) {

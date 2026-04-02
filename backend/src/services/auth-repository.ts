@@ -12,8 +12,16 @@ export interface CreateGoogleUserInput {
 export interface AuthRepository {
   findUserByGoogleId(googleId: string): Promise<User | undefined>;
   findUserByEmail(email: string): Promise<User | undefined>;
+  findUserById(id: string): Promise<User | undefined>;
   upsertGoogleUser(input: CreateGoogleUserInput): Promise<User>;
   createSession(session: Session): Promise<Session>;
+  getSessionByRefreshToken(refreshToken: string): Promise<Session | undefined>;
+  rotateSessionRefreshToken(input: {
+    sessionId: string;
+    refreshToken: string;
+    expiresAt: string;
+  }): Promise<Session | undefined>;
+  deleteSessionByRefreshToken(refreshToken: string): Promise<boolean>;
   addAuditEvent(event: {
     userId: string;
     action: 'login' | 'logout' | 'refresh' | 'role_change';
@@ -54,6 +62,21 @@ function toUser(row: {
 
 export class PostgresAuthRepository implements AuthRepository {
   constructor(private readonly pool: Pool) {}
+
+  async findUserById(id: string): Promise<User | undefined> {
+    const result = await this.pool.query(
+      `SELECT id, email, display_name, google_id, roles, created_at, updated_at
+       FROM users
+       WHERE id = $1`,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return undefined;
+    }
+
+    return toUser(result.rows[0]);
+  }
 
   async findUserByGoogleId(googleId: string): Promise<User | undefined> {
     const result = await this.pool.query(
@@ -134,6 +157,66 @@ export class PostgresAuthRepository implements AuthRepository {
       [session.id, session.userId, session.refreshToken, session.expiresAt, session.createdAt]
     );
     return session;
+  }
+
+  async getSessionByRefreshToken(refreshToken: string): Promise<Session | undefined> {
+    const result = await this.pool.query(
+      `SELECT id, user_id, refresh_token, expires_at, created_at
+       FROM sessions
+       WHERE refresh_token = $1`,
+      [refreshToken]
+    );
+
+    if (result.rowCount === 0) {
+      return undefined;
+    }
+
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      userId: row.user_id,
+      refreshToken: row.refresh_token,
+      expiresAt: row.expires_at.toISOString(),
+      createdAt: row.created_at.toISOString()
+    };
+  }
+
+  async rotateSessionRefreshToken(input: {
+    sessionId: string;
+    refreshToken: string;
+    expiresAt: string;
+  }): Promise<Session | undefined> {
+    const result = await this.pool.query(
+      `UPDATE sessions
+       SET refresh_token = $1,
+           expires_at = $2
+       WHERE id = $3
+       RETURNING id, user_id, refresh_token, expires_at, created_at`,
+      [input.refreshToken, input.expiresAt, input.sessionId]
+    );
+
+    if (result.rowCount === 0) {
+      return undefined;
+    }
+
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      userId: row.user_id,
+      refreshToken: row.refresh_token,
+      expiresAt: row.expires_at.toISOString(),
+      createdAt: row.created_at.toISOString()
+    };
+  }
+
+  async deleteSessionByRefreshToken(refreshToken: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `DELETE FROM sessions
+       WHERE refresh_token = $1`,
+      [refreshToken]
+    );
+
+    return (result.rowCount ?? 0) > 0;
   }
 
   async addAuditEvent(event: {

@@ -21,6 +21,7 @@ class MockOAuthClient {
 describe('auth routes', () => {
   function createTestApp() {
     const app = express();
+    app.use(express.json());
     app.use('/api', buildAuthRouter(new InMemoryAuthRepository(), new MockOAuthClient()));
     return app;
   }
@@ -67,5 +68,35 @@ describe('auth routes', () => {
     expect(response.status).toBe(200);
     expect(response.body.token).toBeDefined();
     expect(response.body.user.email).toBe('oauth-user@example.com');
+  });
+
+  it('refreshes jwt and rotates refresh token', async () => {
+    const app = createTestApp();
+    const callbackResponse = await request(app).get('/api/auth/google/callback?code=abc123');
+
+    const refreshResponse = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: 'refresh-token' });
+
+    expect(callbackResponse.status).toBe(200);
+    expect(refreshResponse.status).toBe(200);
+    expect(refreshResponse.body.token).toBeDefined();
+    expect(refreshResponse.body.refreshToken).toBeDefined();
+    expect(refreshResponse.body.refreshToken).not.toBe('refresh-token');
+  });
+
+  it('logs out and invalidates refresh token', async () => {
+    const app = createTestApp();
+    await request(app).get('/api/auth/google/callback?code=abc123');
+
+    const logoutResponse = await request(app)
+      .post('/api/auth/logout')
+      .send({ refreshToken: 'refresh-token' });
+    expect(logoutResponse.status).toBe(200);
+
+    const refreshResponse = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: 'refresh-token' });
+    expect(refreshResponse.status).toBe(401);
   });
 });

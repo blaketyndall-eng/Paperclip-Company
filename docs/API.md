@@ -37,7 +37,22 @@
   - Writes auth audit event.
   - Response:
     - `token: string`
+    - `refreshToken: string`
     - `user: { id, email, displayName, roles, createdAt, updatedAt }`
+
+- `POST /auth/refresh`
+  - Body:
+    - `refreshToken: string`
+  - Rotates refresh token and returns a new JWT.
+  - Response:
+    - `token: string`
+    - `refreshToken: string`
+    - `user: { id, email, displayName, roles, createdAt, updatedAt }`
+
+- `POST /auth/logout`
+  - Body:
+    - `refreshToken: string`
+  - Invalidates the refresh session and writes logout audit event.
 
 - `GET /auth/me`
   - Returns decoded JWT user context.
@@ -88,6 +103,14 @@
   - Access: owner of workflow or `admin`
   - Returns run-scoped workflow audit events.
 
+- `POST /runs/:runId/export`
+  - Access: owner of workflow or `admin`
+  - Returns export payload for the run:
+    - `run`
+    - `steps[]`
+    - `auditEvents[]`
+    - `exportedAt`
+
 ## Standard Error Shape
 
 ```json
@@ -108,4 +131,4 @@ Known workflow service errors:
 
 ## OpenAPI Coverage Note
 
-The current contract in `docs/openapi.json` includes all implemented auth and workflow endpoints in the codebase. Keep this file updated whenever route signatures, request bodies, or response statuses change.
+The contract in `docs/openapi.json` covers the core implemented auth/workflow endpoints and should be updated whenever route signatures, request bodies, or response statuses change.

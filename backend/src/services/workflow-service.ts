@@ -154,4 +154,42 @@ export class WorkflowService {
 
     return this.repository.listRunAuditEvents(input.runId);
   }
+
+  async exportRun(input: {
+    runId: string;
+    requesterUserId: string;
+    requesterRoles: string[];
+  }): Promise<{
+    exportedAt: string;
+    run: WorkflowRun;
+    steps: Awaited<ReturnType<WorkflowRepository['listRunSteps']>>;
+    auditEvents: WorkflowAuditEvent[];
+  }> {
+    const run = await this.repository.getRunById(input.runId);
+    if (!run) {
+      throw new WorkflowServiceError(404, 'RUN_NOT_FOUND', 'Run not found');
+    }
+
+    const workflow = await this.repository.getWorkflowById(run.workflowId);
+    if (!workflow) {
+      throw new WorkflowServiceError(404, 'WORKFLOW_NOT_FOUND', 'Workflow not found');
+    }
+
+    const canAccess = workflow.ownerId === input.requesterUserId || input.requesterRoles.includes('admin');
+    if (!canAccess) {
+      throw new WorkflowServiceError(403, 'FORBIDDEN', 'Cannot export this run');
+    }
+
+    const [steps, auditEvents] = await Promise.all([
+      this.repository.listRunSteps(run.id),
+      this.repository.listRunAuditEvents(run.id)
+    ]);
+
+    return {
+      exportedAt: new Date().toISOString(),
+      run,
+      steps,
+      auditEvents
+    };
+  }
 }

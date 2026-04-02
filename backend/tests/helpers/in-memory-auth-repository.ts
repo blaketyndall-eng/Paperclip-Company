@@ -21,6 +21,10 @@ export class InMemoryAuthRepository implements AuthRepository {
     return Array.from(this.users.values()).find((user) => user.email === email);
   }
 
+  async findUserById(id: string): Promise<User | undefined> {
+    return this.users.get(id);
+  }
+
   async upsertGoogleUser(input: CreateGoogleUserInput): Promise<User> {
     const existing = (await this.findUserByGoogleId(input.googleId)) ?? (await this.findUserByEmail(input.email));
     const now = new Date().toISOString();
@@ -54,6 +58,40 @@ export class InMemoryAuthRepository implements AuthRepository {
   async createSession(session: Session): Promise<Session> {
     this.sessions.set(session.id, session);
     return session;
+  }
+
+  async getSessionByRefreshToken(refreshToken: string): Promise<Session | undefined> {
+    return Array.from(this.sessions.values()).find((session) => session.refreshToken === refreshToken);
+  }
+
+  async rotateSessionRefreshToken(input: {
+    sessionId: string;
+    refreshToken: string;
+    expiresAt: string;
+  }): Promise<Session | undefined> {
+    const existing = this.sessions.get(input.sessionId);
+    if (!existing) {
+      return undefined;
+    }
+
+    const updated: Session = {
+      ...existing,
+      refreshToken: input.refreshToken,
+      expiresAt: input.expiresAt
+    };
+
+    this.sessions.set(input.sessionId, updated);
+    return updated;
+  }
+
+  async deleteSessionByRefreshToken(refreshToken: string): Promise<boolean> {
+    const session = await this.getSessionByRefreshToken(refreshToken);
+    if (!session) {
+      return false;
+    }
+
+    this.sessions.delete(session.id);
+    return true;
   }
 
   async addAuditEvent(event: {

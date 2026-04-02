@@ -154,4 +154,51 @@ describe('workflow routes', () => {
     expect(secondApprove.status).toBe(409);
     expect(secondApprove.body.error).toBe('INVALID_RUN_STATE');
   });
+
+  it('exports run payload for owner', async () => {
+    const app = createApp();
+    const ownerToken = tokenFor('owner-export-1', ['operator']);
+
+    const workflowResponse = await request(app)
+      .post('/api/workflows')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ name: 'Export Flow', template: 'claims_intake_v1' });
+
+    const runResponse = await request(app)
+      .post(`/api/workflows/${workflowResponse.body.workflow.id}/execute`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({});
+
+    const exportResponse = await request(app)
+      .post(`/api/runs/${runResponse.body.run.id}/export`)
+      .set('Authorization', `Bearer ${ownerToken}`);
+
+    expect(exportResponse.status).toBe(200);
+    expect(exportResponse.body.export.run.id).toBe(runResponse.body.run.id);
+    expect(Array.isArray(exportResponse.body.export.steps)).toBe(true);
+    expect(Array.isArray(exportResponse.body.export.auditEvents)).toBe(true);
+  });
+
+  it('blocks run export for non-owner non-admin users', async () => {
+    const app = createApp();
+    const ownerToken = tokenFor('owner-export-2', ['operator']);
+    const otherUserToken = tokenFor('other-user-2', ['viewer']);
+
+    const workflowResponse = await request(app)
+      .post('/api/workflows')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ name: 'Export Guard', template: 'claims_intake_v1' });
+
+    const runResponse = await request(app)
+      .post(`/api/workflows/${workflowResponse.body.workflow.id}/execute`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({});
+
+    const exportResponse = await request(app)
+      .post(`/api/runs/${runResponse.body.run.id}/export`)
+      .set('Authorization', `Bearer ${otherUserToken}`);
+
+    expect(exportResponse.status).toBe(403);
+    expect(exportResponse.body.error).toBe('FORBIDDEN');
+  });
 });

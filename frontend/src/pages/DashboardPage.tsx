@@ -1,17 +1,43 @@
 import { Card } from '../components/Card';
+import { AuthUser } from '../services/auth-api';
 
-export function DashboardPage() {
+interface DashboardPageProps {
+  user: AuthUser;
+  can: (roles: string[]) => boolean;
+  onLogout: () => Promise<void>;
+}
+
+export function DashboardPage({ user, can, onLogout }: DashboardPageProps) {
   return (
     <main>
       <h1>Paperclip Company MVP Dashboard</h1>
-      <Card title="Week 1 Status">
-        <p>Repository scaffolding is complete and ready for Phase 1 implementation.</p>
+      <Card title="Signed In">
+        <p>
+          {user.displayName} ({user.email})
+        </p>
+        <p>Roles: {user.roles.join(', ')}</p>
+        <button type="button" onClick={() => void onLogout()}>
+          Logout
+        </button>
       </Card>
-      <Card title="Next Build Targets">
+
+      <Card title="Approvals">
+        {can(['admin', 'approver']) ? (
+          <button type="button">Review Pending Approvals</button>
+        ) : (
+          <p>Approval actions are hidden for your current role.</p>
+        )}
+      </Card>
+
+      <Card title="Admin Actions">
+        {can(['admin']) ? <button type="button">View Auth Audit Events</button> : <p>Admin-only controls hidden.</p>}
+      </Card>
+
+      <Card title="Current Build Targets">
         <ul>
-          <li>Google OAuth 2.0 login flow</li>
-          <li>Workflow model and orchestration API</li>
-          <li>Audit logging and database migrations</li>
+          <li>Google Workspace connectors</li>
+          <li>Queue-backed execution and LLM integration</li>
+          <li>Export and observability hardening</li>
         </ul>
       </Card>
     </main>
