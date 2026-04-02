@@ -1,0 +1,12 @@
+{
+  "dashboards": [
+    {
+      "name": "system-health",
+      "description": "API latency, error rate, and uptime"
+    },
+    {
+      "name": "workflow-metrics",
+      "description": "workflow runs, approvals, and completion rate"
+    }
+  ]
+}
